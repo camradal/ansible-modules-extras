@@ -142,6 +142,8 @@ EXAMPLES = '''
 
 '''
 
+import xml.etree.ElementTree as ET
+
 DEFAULT_VAPP_OPERATION = 'noop'
 
 VAPP_STATUS = {
@@ -154,6 +156,15 @@ VAPP_STATES = ['present', 'absent', 'deployed', 'undeployed']
 VAPP_OPERATIONS = ['poweron', 'poweroff', 'suspend', 'shutdown',
                    'reboot', 'reset', 'noop']
 
+
+def get_error(response):
+    if response is not None:
+        try:
+            root = ET.fromstring(response.text)
+            return root.get('message')
+        except:
+            return response.text
+    return ""
 
 def get_instance(module):
     vapp_name = module.params['vapp_name']
@@ -185,6 +196,10 @@ def create(module):
                                   catalog_name, network_name, network_mode,
                                   vm_name, vm_cpus, vm_memory, deploy, poweron)
 
+    if not task:
+        msg = "Failed to create vApp: %s" % get_error(module.vca.response)
+        module.fail_json(msg=msg)
+
     module.vca.block_until_completed(task)
 
 def delete(module):
@@ -207,7 +222,11 @@ def do_operation(module):
         operation = 'powerOff'
 
     cmd = 'power:%s' % operation
-    module.get_vapp(vapp_name).execute(cmd, 'post', targetVM=vm)
+    vapp = module.get_vapp(vapp_name)
+    task = vapp.execute(cmd, 'post', targetVM=vm)
+    if not task:
+        msg = "Operation %s failed: %s" % (operation, get_error(vapp.response))
+        module.fail_json(msg=msg)
 
 def set_state(module):
     state = module.params['state']
